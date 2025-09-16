@@ -78,7 +78,7 @@ python nih_reporter_search.py faculty.yaml --extra "Harvard University"
 python nih_reporter_search.py faculty.yaml --extra "Mayo Clinic"
 ```
 
-**Note:** The tool also automatically cleans up names (removes periods from middle initials) to improve API matching and sorts all results alphabetically by last name.
+**Note:** The tool also automatically cleans up names (removes periods from middle initials) to improve API matching, sorts all results alphabetically by last name, and formats names in CSV/Excel output as "Last Name, First Name".
 
 ### Programmatic Usage
 
@@ -105,7 +105,11 @@ The results are returned as JSON with the following structure:
         "project_id": "1R01DK123456-01",
         "title": "Project Title",
         "start_date": "2023-01-01T00:00:00",
-        "end_date": "2025-12-31T00:00:00",
+        "end_date": "2023-12-31T00:00:00",
+        "budget_start_date": "2023-01-01T00:00:00",
+        "budget_end_date": "2023-12-31T00:00:00",
+        "project_start_date": "2023-01-01T00:00:00",
+        "project_end_date": "2025-12-31T00:00:00",
         "direct_costs": 250000.0,
         "indirect_costs": 50000.0,
         "award_amount": 300000.0,
@@ -132,16 +136,39 @@ This will search for a well-known researcher and display the results.
 ### JSON Results
 Detailed results with yearly funding breakdown and project details.
 
-### Summary CSV
-A summary CSV file is automatically generated with the following columns:
+### Summary Files
+Two summary files are automatically generated:
+
+#### CSV Summary (`*_summary.csv`)
+A summary CSV file with the following columns:
 - **Name**: Person's name
 - **Total_Direct_Costs**: Sum of all direct costs across all years
 - **Total_Costs**: Sum of all total costs across all years  
-- **Most_Recent_Year**: Most recent project end date year
+- **Most_Recent_Year**: Most recent budget end date year
 - **Total_Projects**: Total number of projects found
 - **Current_Direct_Costs**: Sum of direct costs for projects active today
 - **Current_Total_Costs**: Sum of total costs for projects active today
-- **Current_Projects**: Number of projects currently active (where today's date falls between start_date and end_date)
+- **Current_Projects**: Number of projects currently active (where today's date falls between budget start and end dates)
+
+#### Excel Summary (`*_summary.xlsx`)
+A formatted Excel spreadsheet with the same data as the CSV, featuring:
+- **Professional formatting**: Blue header with white text
+- **Auto-sized columns**: Automatically adjusted column widths
+- **Number formatting**: Currency values formatted with commas and decimals
+- **Sorted by last name**: Results alphabetically ordered by surname
+- **"Last Name, First Name" format**: Names formatted for professional presentation
+
+### Date Fields
+
+The tool uses **budget dates** for all calculations and current project detection:
+
+- **`start_date`** and **`end_date`**: Budget start and end dates (used for calculations)
+- **`budget_start_date`** and **`budget_end_date`**: Raw budget date fields from API
+- **`project_start_date`** and **`project_end_date`**: Overall project duration dates
+
+**Why budget dates?** Budget dates represent the actual funding period for each year, which is more accurate for financial analysis than the overall project duration. For example:
+- Project duration: 2020-2025 (5 years)
+- Budget periods: 2020, 2021, 2022, 2023, 2024 (annual funding cycles)
 
 ## Features
 
