@@ -39,12 +39,46 @@ names:
 python nih_reporter_search.py names.yaml
 ```
 
-3. Results will be saved to `results.json` by default, or specify a custom output file:
+3. Results will be saved to `{yaml_basename}_results.json` by default, or specify a custom output file:
 ```bash
 python nih_reporter_search.py names.yaml -o my_results.json
 ```
 
-4. A summary CSV file will also be created automatically (e.g., `results_summary.csv` or `my_results_summary.csv`)
+4. A summary CSV file will also be created automatically (e.g., `names_results_summary.csv` or `my_results_summary.csv`)
+
+5. Optionally filter by organization for more specific searches:
+```bash
+python nih_reporter_search.py names.yaml --extra "University of Minnesota"
+```
+
+### Output File Naming
+
+- **Default naming**: Based on the input YAML file basename
+  - `k12scholars.yaml` → `k12scholars_results.json` and `k12scholars_results_summary.csv`
+  - `names.yaml` → `names_results.json` and `names_results_summary.csv`
+- **Custom naming**: Use `-o` flag to specify custom output filename
+
+### Organization Filtering
+
+The `--extra` argument allows you to filter results by organization. This is useful for:
+
+- **Institution specificity**: Filter to researchers at specific universities
+- **Location specificity**: Focus on researchers at institutions in specific locations
+- **Department filtering**: Narrow down to specific departments or research centers
+
+**Examples:**
+```bash
+# Search for University of Minnesota researchers
+python nih_reporter_search.py faculty.yaml --extra "University of Minnesota"
+
+# Search for Harvard researchers  
+python nih_reporter_search.py faculty.yaml --extra "Harvard University"
+
+# Search for Mayo Clinic researchers
+python nih_reporter_search.py faculty.yaml --extra "Mayo Clinic"
+```
+
+**Note:** The tool also automatically cleans up names (removes periods from middle initials) to improve API matching and sorts all results alphabetically by last name.
 
 ### Programmatic Usage
 
@@ -105,6 +139,9 @@ A summary CSV file is automatically generated with the following columns:
 - **Total_Costs**: Sum of all total costs across all years  
 - **Most_Recent_Year**: Most recent project end date year
 - **Total_Projects**: Total number of projects found
+- **Current_Direct_Costs**: Sum of direct costs for projects active today
+- **Current_Total_Costs**: Sum of total costs for projects active today
+- **Current_Projects**: Number of projects currently active (where today's date falls between start_date and end_date)
 
 ## Features
 

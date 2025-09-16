@@ -11,6 +11,7 @@ import yaml
 import requests
 import argparse
 import csv
+import os
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from collections import defaultdict
@@ -27,21 +28,28 @@ class NIHReporterSearcher:
             'User-Agent': 'NIH-Reporter-Search-Tool/1.0'
         })
     
-    def search_person(self, name: str) -> List[Dict[str, Any]]:
+    def search_person(self, name: str, organization: str = None) -> List[Dict[str, Any]]:
         """
         Search for funding information for a specific person.
         
         Args:
             name: The name of the person to search for
+            organization: Optional organization to filter by
             
         Returns:
             List of project dictionaries from the API
         """
         # Prepare the search criteria
+        criteria = {
+            "pi_names": [{"any_name": name}]
+        }
+        
+        # Add organization filter if provided
+        if organization:
+            criteria["org_names"] = [organization]
+        
         search_criteria = {
-            "criteria": {
-                "pi_names": [{"any_name": name}]
-            },
+            "criteria": criteria,
             "offset": 0,
             "limit": 500,  # Maximum allowed by API
             "sort_field": "project_start_date",
@@ -126,17 +134,55 @@ class NIHReporterSearcher:
             output_file: Path to output CSV file
         """
         with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['Name', 'Total_Direct_Costs', 'Total_Costs', 'Most_Recent_Year', 'Total_Projects']
+            fieldnames = ['Name', 'Total_Direct_Costs', 'Total_Costs', 'Most_Recent_Year', 'Total_Projects', 
+                         'Current_Direct_Costs', 'Current_Total_Costs', 'Current_Projects']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             
             writer.writeheader()
             
-            for name, data in results.items():
+            # Sort results by last name for CSV output
+            sorted_results = self._sort_results_by_last_name(results)
+            
+            for name, data in sorted_results.items():
                 # Get totals directly from the data structure
                 total_direct = data.get('total_direct_costs', 0.0)
                 total_costs = data.get('total_costs', 0.0)
                 total_projects = data.get('total_projects', 0)
                 projects = data.get('projects', [])
+                
+                # Calculate current funding (projects active today)
+                current_direct = 0.0
+                current_total = 0.0
+                current_project_count = 0
+                today = datetime.now().date()
+                
+                for project in projects:
+                    start_date = project.get('start_date', '')
+                    end_date = project.get('end_date', '')
+                    
+                    if start_date and end_date:
+                        try:
+                            # Parse start and end dates
+                            project_start = datetime.strptime(start_date, '%Y-%m-%dT%H:%M:%S').date()
+                        except ValueError:
+                            try:
+                                project_start = datetime.strptime(start_date, '%Y-%m-%d').date()
+                            except ValueError:
+                                continue
+                        
+                        try:
+                            project_end = datetime.strptime(end_date, '%Y-%m-%dT%H:%M:%S').date()
+                        except ValueError:
+                            try:
+                                project_end = datetime.strptime(end_date, '%Y-%m-%d').date()
+                            except ValueError:
+                                continue
+                        
+                        # Check if project is currently active
+                        if project_start <= today <= project_end:
+                            current_direct += project.get('direct_costs', 0.0)
+                            current_total += project.get('total_costs', 0.0)
+                            current_project_count += 1
                 
                 # Find most recent year based on project end dates
                 most_recent_year = None
@@ -168,17 +214,43 @@ class NIHReporterSearcher:
                     'Total_Direct_Costs': f"{total_direct:,.2f}",
                     'Total_Costs': f"{total_costs:,.2f}",
                     'Most_Recent_Year': most_recent_year or 'N/A',
-                    'Total_Projects': total_projects
+                    'Total_Projects': total_projects,
+                    'Current_Direct_Costs': f"{current_direct:,.2f}",
+                    'Current_Total_Costs': f"{current_total:,.2f}",
+                    'Current_Projects': current_project_count
                 })
         
         print(f"Summary saved to: {output_file}")
     
-    def search_names_from_yaml(self, yaml_file: str) -> Dict[str, Any]:
+    def _sort_results_by_last_name(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sort results alphabetically by last name.
+        
+        Args:
+            results: Dictionary with results for each person
+            
+        Returns:
+            Dictionary sorted by last name
+        """
+        def get_last_name(name: str) -> str:
+            """Extract last name from full name."""
+            # Split by space and take the last part as last name
+            parts = name.strip().split()
+            if not parts:
+                return ""
+            return parts[-1]
+        
+        # Sort the results by last name
+        sorted_items = sorted(results.items(), key=lambda x: get_last_name(x[0]))
+        return dict(sorted_items)
+    
+    def search_names_from_yaml(self, yaml_file: str, extra_text: str = "") -> Dict[str, Any]:
         """
         Search for funding information for all names in a YAML file.
         
         Args:
             yaml_file: Path to YAML file containing names
+            extra_text: Optional organization name to filter by (e.g., "University of Minnesota")
             
         Returns:
             Dictionary with results for each person
@@ -195,8 +267,10 @@ class NIHReporterSearcher:
             results = {}
             
             for name in names:
-                print(f"Searching for: {name}")
-                projects = self.search_person(name)
+                # Clean up the name (remove periods from middle initials for better API matching)
+                clean_name = name.replace('.', '').replace('  ', ' ')
+                print(f"Searching for: {clean_name}" + (f" at {extra_text}" if extra_text else ""))
+                projects = self.search_person(clean_name, extra_text)
                 processed_data = self.process_funding_data(projects)
                 
                 results[name] = {
@@ -204,12 +278,15 @@ class NIHReporterSearcher:
                     'total_direct_costs': processed_data['total_direct_costs'],
                     'total_costs': processed_data['total_costs'],
                     'projects': processed_data['projects'],
-                    'search_timestamp': datetime.now().isoformat()
+                    'search_timestamp': datetime.now().isoformat(),
+                    'search_name_used': clean_name,
+                    'organization_filter': extra_text if extra_text else None
                 }
                 
-                print(f"Found {len(projects)} projects for {name}")
+                print(f"Found {len(projects)} projects for {name}" + (f" at {extra_text}" if extra_text else ""))
             
-            return results
+            # Sort results alphabetically by last name
+            return self._sort_results_by_last_name(results)
             
         except FileNotFoundError:
             print(f"Error: YAML file '{yaml_file}' not found")
@@ -223,18 +300,24 @@ def main():
     """Main function to run the NIH Reporter search."""
     parser = argparse.ArgumentParser(description='Search NIH Reporter API for funding information')
     parser.add_argument('yaml_file', help='Path to YAML file containing names to search')
-    parser.add_argument('-o', '--output', help='Output JSON file (default: results.json)')
+    parser.add_argument('-o', '--output', help='Output JSON file (default: based on YAML filename)')
+    parser.add_argument('--extra', help='Organization name to filter by (e.g., "University of Minnesota")')
     
     args = parser.parse_args()
     
-    # Set default output file
-    output_file = args.output or 'results.json'
+    # Generate output filename based on YAML file basename
+    if args.output:
+        output_file = args.output
+    else:
+        yaml_basename = os.path.splitext(os.path.basename(args.yaml_file))[0]
+        output_file = f"{yaml_basename}_results.json"
     
     # Create searcher instance
     searcher = NIHReporterSearcher()
     
     # Search for names
-    results = searcher.search_names_from_yaml(args.yaml_file)
+    extra_text = args.extra or ""
+    results = searcher.search_names_from_yaml(args.yaml_file, extra_text)
     
     if results:
         # Save results to JSON file
